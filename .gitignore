@@ -1,3 +1,6 @@
 node_modules/
 .DS_Store
 *.local
+
+# Eval run artifacts (regenerated each run)
+.claude/evals/results/

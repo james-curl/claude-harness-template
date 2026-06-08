@@ -217,10 +217,14 @@ your-project/
     ├── commands/                           # Empty — add project-specific commands here
     ├── skills/                            # Empty — add project-specific skills here
     └── evals/
-        └── suites/                        # Empty — add project-specific eval suites here
+        ├── eval-rules.yaml                # Declarative rule register (3 starter suites, # TODO stubs)
+        └── suites/
+            ├── security.sh                # Secret hygiene + your authz/boundary invariants
+            ├── architecture.sh            # Import boundaries + structural rules
+            └── code-hygiene.sh            # File size, comment quality, debug-statement bans
 ```
 
-Rules, commands, skills, and the eval infrastructure come from `~/.claude/` (global layer) and are available in every project without duplication.
+Rules, commands, skills, and the eval *infrastructure* (runner, assertions, autoresearch) come from `~/.claude/` (global layer) and are available in every project without duplication. The template ships only the project-local *suites* and their `eval-rules.yaml` register — never a local copy of the runner or assertions (that would recreate the silent-drift footgun described above).
 
 ## How Each Layer Works
 
@@ -302,6 +306,20 @@ report
 ```
 
 Run with: `~/.claude/evals/runner.sh my-check` (the runner checks project-local suites first).
+
+#### Starter suites + `eval-rules.yaml`
+
+The template ships three starter suites — `security.sh`, `architecture.sh`, `code-hygiene.sh` — plus `eval-rules.yaml`, a declarative register that gives each rule a stable ID (`SEC-001`, `ARCH-002`, …) and documents its intent and scope. The suites are the executable truth; the YAML is the human-readable index you cite in commits, PRs, and security audits.
+
+Every rule is a stub marked `# TODO`. To adopt:
+
+1. **`code-hygiene.sh` works out of the box** — file-size ceiling, corporate-comment ban, debug-statement ban all map to generic global assertions. Tune the 600-line ceiling and you're done.
+2. **`security.sh`** ships two generic checks (no inline secrets, no `.env` staged) and `# TODO` slots for your authz/boundary invariants (route classification, re-auth on sensitive mutations, outbound-fetch allowlists).
+3. **`architecture.sh`** is a placeholder — fill in your import-boundary rule via `assert_no_imports_from "<banned-specifier>" "<dir>"` (e.g. features must import from your `@org/ui` wrapper, never the underlying primitives).
+
+**Phase gates.** A rule's `gate:` field is either `active` (enforced today) or a named gate that stays PENDING until its `unlocks_marker` file exists. This lets you commit a rule *before* the code it guards lands — the suite skips it cleanly instead of failing, so you never have to choose between "drop the check" and "break the build." Use `assert_gated "<gate>" "<marker-file>" "<desc>" <fn> <args...>` in the suite.
+
+**Prefer global assertions.** When you need a new check, first look for a generic assertion in `~/.claude/evals/assertions.sh`. Author a project-local `assertions.sh` only when a check is genuinely project-specific — a local copy of a global assertion drifts silently (see the precedence footgun above).
 
 ### Agents — Team Definitions
 
@@ -544,6 +562,8 @@ report
 ```
 
 Run with: `~/.claude/evals/runner.sh deploy-check`
+
+Then add it to `eval-rules.yaml` under `suites:` so it shows up in the register alongside the starter suites. See **Starter suites + `eval-rules.yaml`** above for the rule-ID convention and phase gates.
 
 ### Add a project-specific skill
 

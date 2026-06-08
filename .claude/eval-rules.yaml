@@ -1,0 +1,144 @@
+# Project Eval Rules — declarative skeleton
+#
+# This file DOCUMENTS the convention invariants your project enforces. The
+# actual enforcement lives in shell suites under `.claude/evals/suites/*.sh`,
+# which call binary assertion functions from the GLOBAL library at
+# `~/.claude/evals/assertions.sh`. This YAML is the human-readable register:
+# one entry per rule, mapping a stable ID to the assertion that checks it.
+#
+# Why keep a YAML register at all, when the suites are the executable truth?
+#   - It gives each rule a stable ID (SEC-001, ARCH-002, …) you can cite in
+#     commits, PRs, and security audits without grepping shell.
+#   - It records the *intent* and *scope* of a rule next to its ID, so a new
+#     contributor reads one file instead of reverse-engineering greps.
+#   - The `gate` field lets a rule exist BEFORE the code it guards lands — it
+#     skips with a PENDING marker instead of failing, so suites stay green on
+#     current code without silently dropping the future check.
+#
+# HOW TO ADOPT THIS IN A NEW PROJECT
+#   1. Set `project:` below.
+#   2. For each rule, fill in `scope:` (dirs to scan) and pick/author an
+#      `assertion:` function. Generic assertions ship globally; project-
+#      specific ones go in a local `assertions.sh` ONLY if you truly need
+#      them (prefer composing global ones — see README "silent drift").
+#   3. Delete the rules that don't apply. Stubs are marked `# TODO`.
+#   4. Wire the suite into your pre-commit / CI via `~/.claude/evals/runner.sh`.
+#
+# Anchors: fill in with your project's security audit / architecture doc.
+
+version: 1
+project: your_project  # TODO: set to your project name
+
+# ──────────────────────────────
+# Security invariants — security.sh suite
+# ──────────────────────────────
+security:
+  - id: SEC-001
+    name: no-secrets-in-source
+    description: No hardcoded API keys, tokens, passwords, or connection strings in source. Secrets come from env vars / a secret manager.
+    gate: active
+    scope:
+      - src
+    assertion: assert_no_inline_shell_secrets
+    # TODO: tune the scope to your source roots; extend the assertion if your
+    # secret formats aren't caught by the generic credential regexes.
+
+  - id: SEC-002
+    name: no-env-files-committed
+    description: .env and .env.* files are never staged or committed. Only .env.example (without real values) belongs in git.
+    gate: active
+    assertion: assert_no_env_staged
+
+  # TODO: add project-specific authz/boundary invariants. Examples a real
+  # project would fill in (delete if N/A):
+  #   - SEC-003 every API route is classified public/authed/admin (no raw handler)
+  #   - SEC-004 sensitive mutations re-fetch the caller's role (TOCTOU defense)
+  #   - SEC-005 outbound fetch only through a helper enforcing an allowlist
+  #   - SEC-006 PII-typed values never passed to a logger
+
+# ──────────────────────────────
+# Architecture enforcement — architecture.sh suite
+# ──────────────────────────────
+architecture:
+  - id: ARCH-001
+    name: no-cross-layer-imports
+    description: Feature code imports only from your public UI/lib boundary, never from underlying primitives directly. Replace the example import below with your real boundary.
+    gate: active
+    scope:
+      - src
+    assertion: assert_no_imports_from
+    args:
+      # TODO: replace with the import specifier(s) you want to ban in feature code.
+      # e.g. "@radix-ui" if features must import from your own @org/ui wrapper.
+      - "TODO-banned-import-specifier"
+
+  # TODO: add project-specific structural rules. Examples:
+  #   - ARCH-002 no legacy framework imports in the new service dir
+  #   - ARCH-003 dependency-cruiser passes (allowed import graph)
+  #   - ARCH-004 knip/ts-prune clean (no dead files/exports)
+
+# ──────────────────────────────
+# Code hygiene — code-hygiene.sh suite
+# ──────────────────────────────
+# These map to generic global assertions and apply to almost any codebase —
+# usually adoptable as-is, only tuning thresholds/scope.
+code_hygiene:
+  - id: HYG-001
+    name: no-oversized-files
+    description: No source file exceeds the line ceiling. Long files are hard to reason about; split them.
+    gate: active
+    scope:
+      - src
+    assertion: assert_no_files_over_lines
+    args:
+      - "600"   # TODO: tune the ceiling for your project
+
+  - id: HYG-002
+    name: no-corporate-comments
+    description: No robotic boilerplate comments (section-divider banners, "this function does X" restating the signature). Comments explain *why*, not *what*.
+    gate: active
+    scope:
+      - src
+    assertion: assert_no_corporate_comments
+
+  - id: HYG-003
+    name: no-debug-statements
+    description: No stray console.log / print / debugger left in non-trivial files.
+    gate: active
+    scope:
+      - src
+    assertion: assert_no_debug_statements_in_large_files
+
+# ──────────────────────────────
+# Gate definitions — which milestone unlocks which rules
+# ──────────────────────────────
+# A rule's `gate:` is either `active` (enforced today) or the name of a gate
+# below. Gated rules SKIP with a PENDING marker until their `unlocks_marker`
+# file exists — letting you commit the rule before the code it guards lands.
+gates:
+  active:
+    description: Rules that apply to the current codebase today.
+  # TODO: define milestone gates as your project grows. Example:
+  # service-v2:
+  #   description: New service layer landed.
+  #   unlocks_marker: apps/api-v2/src/index.ts
+
+# ──────────────────────────────
+# Eval suite composition
+# ──────────────────────────────
+# Each suite maps to a `.claude/evals/suites/<name>.sh` file. Run one with:
+#   ~/.claude/evals/runner.sh <name>
+# The runner sources the GLOBAL assertions first, then your local suite.
+suites:
+  security:
+    description: Secret hygiene + project authz/boundary invariants.
+    rules_from: security
+  architecture:
+    description: Import boundaries and structural enforcement.
+    rules_from: architecture
+  code-hygiene:
+    description: File size, comment quality, debug-statement bans.
+    rules_from: code_hygiene
+  all:
+    description: Run every suite in sequence.
+    includes: [security, architecture, code-hygiene]
